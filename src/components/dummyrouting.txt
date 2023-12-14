@@ -1,0 +1,196 @@
+import React, { Component, useEffect, useState } from 'react'
+import { Box, TextField, Button } from '@mui/material';
+import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import { MapContainer, TileLayer } from "react-leaflet";
+import L from "leaflet";
+import { createControlComponent } from "@react-leaflet/core";
+import "leaflet-routing-machine";
+import RoutingMachine from './TwoPointRoute';
+import axios from 'axios';
+import Autosuggest from 'react-autosuggest';
+
+const SanFrancisco = [37.74638779388551, -122.42209196090698]
+
+
+const Routing = () => {
+
+    const [startLocation, setStartLocation] = useState('')
+    const [endLocation, setEndLocation] = useState('')
+    const [startCoordinates, setStartCoordinates] = useState(null)
+    const [endCoordinates, setEndCoordinates] = useState(null)
+    const [startSuggestions, setStartSuggestions] = useState([]);
+    const [endSuggestions, setEndSuggestions] = useState([]);
+
+    const handleLocationSearch = async (location) => {
+        try {
+            const response = await axios.get(
+                `https://api.opencagedata.com/geocode/v1/json?q=${location}&key=dd75d582b6164089a6a68b31f88129fc`
+            );
+
+            // Assuming the first result is the most relevant
+            const result = response.data.results[0];
+
+            if (result) {
+                return {
+                    lat: result.geometry.lat,
+                    lng: result.geometry.lng,
+                }
+            } else {
+                console.error('Location not found');
+            }
+        } catch (error) {
+            console.error('Error fetching location:', error);
+        }
+    };
+
+    const getSuggestions = async (input) => {
+        try {
+            console.log(input,"getSuggestions")
+            const response = await axios.get(
+                `https://api.opencagedata.com/geocode/v1/json?q=${input}&key=dd75d582b6164089a6a68b31f88129fc`
+            );
+
+            const results = response.data.results;
+
+            if (results) {
+                return results.map((result) => ({
+                    label: result.formatted,
+                    coordinates: {
+                        lat: result.geometry.lat,
+                        lng: result.geometry.lng,
+                    },
+                }));
+            } else {
+                console.error('No suggestions found');
+                return [];
+            }
+        } catch (error) {
+            console.error('Error fetching suggestions:', error);
+            return [];
+        }
+    };
+    const onStartSuggestionsFetchRequested = async ({ value}) => {
+        console.log(value,"onStartSuggestionsFetchRequested")
+        if (value && typeof value === 'string') {
+            const trimmedValue = value.trim();
+            const suggestions = await getSuggestions(trimmedValue);
+            setStartSuggestions(suggestions);
+          }
+    };
+    const onEndSuggestionsFetchRequested = async ({ value}) => {
+        console.log(value,"onEndSuggestionsFetchRequested")
+
+        if (value && typeof value === 'string') {
+            const trimmedValue = value.trim();
+            const suggestions = await getSuggestions(trimmedValue);
+            setEndSuggestions(suggestions);
+          }
+    };
+
+
+    const onSuggestionsClearRequested = () => {
+        setStartSuggestions([]);
+        setEndSuggestions([]);
+    };
+
+    const onStartSuggestionSelected = (_, { suggestion },) => {
+        setStartCoordinates(suggestion.coordinates);
+    };
+
+    const onEndSuggestionSelected = (_, { suggestion },) => {
+        setEndCoordinates(suggestion.coordinates);
+    };
+
+    const setBothCoords = async () => {
+        let temp = await handleLocationSearch(startLocation)
+        setStartCoordinates(() => { return temp })
+        temp = await handleLocationSearch(endLocation)
+        setEndCoordinates(() => { return temp })
+    }
+    const startProps = {
+        startLocation,
+        onChange: (_, { newValue }) => setStartLocation(newValue),
+        placeholder: 'Enter a start location',
+
+    };
+
+    const endProps = {
+        endLocation,
+        onChange: (_, { newValue }) => setEndLocation(newValue),
+        placeholder: 'Enter a end location',
+
+    };
+
+    useEffect(() => {
+        console.log(startLocation, startCoordinates, endCoordinates)
+    }, [startLocation, startCoordinates])
+    return (<div>
+        <div> Routing page
+        </div>
+        <div className='container-fluid'>
+            <div className='row justify-content-center'>
+                <div className='col-md-2 col-sm-12'>
+                    <h4>
+                        Enter start Location
+                    </h4>
+                    <Box
+                        component="form"
+                        noValidate
+                        autoComplete="off"
+                    >
+                        <Autosuggest
+                            suggestions={startSuggestions}
+                            onSuggestionsFetchRequested={onStartSuggestionsFetchRequested}
+                            onSuggestionsClearRequested={onSuggestionsClearRequested}
+                            onSuggestionSelected={onStartSuggestionSelected}
+                            getSuggestionValue={(suggestion) => suggestion.label}
+                            renderSuggestion={(suggestion) => <div>{suggestion.label}</div>}
+                            inputProps={startProps}
+                        />
+                    </Box>
+                </div>
+                <div className='col-md-2 col-sm-12'>
+                    <h4>
+                        Enter end Location
+                    </h4>
+                    <Box
+                        component="form"
+                        noValidate
+                        autoComplete="off"
+                    >
+                        <Autosuggest
+                            suggestions={endSuggestions}
+                            onSuggestionsFetchRequested={onEndSuggestionsFetchRequested}
+                            onSuggestionsClearRequested={onSuggestionsClearRequested}
+                            onSuggestionSelected={onEndSuggestionSelected}
+                            getSuggestionValue={(suggestion) => suggestion.label}
+                            renderSuggestion={(suggestion) => <div>{suggestion.label}</div>}
+                            inputProps={endProps}
+                        />
+                    </Box>
+                </div>
+                <div className='col-md-2 col-sm-6 justify-content-center align-bottom'>
+                    <Button className='align-bottom' style={{ marginTop: "auto" }} variant='outlined' onClick={() => { setBothCoords() }} > GO <ArrowForwardIosIcon fontSize='small' /></Button>
+                </div>
+            </div>
+            <div className='row' style={{ height: "70vh", width: "160vh" }}>
+                <MapContainer
+                    doubleClickZoom={false}
+                    id="mapId"
+                    zoom={14}
+                    center={SanFrancisco}
+                >
+                    <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <RoutingMachine startCoords={startCoordinates} endCoords={endCoordinates} />
+
+                </MapContainer>
+            </div>
+        </div>
+
+    </div>)
+}
+
+export default Routing;
